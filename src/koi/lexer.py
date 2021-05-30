@@ -1,9 +1,9 @@
 # koi/lexer.py - Lexical parser for Koi language
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Tuple
 
 
-@dataclass
+@dataclass(frozen=True)
 class Token:
     kind: str
     position: Tuple[int, int]
@@ -18,15 +18,24 @@ class LexError(Exception):
 
 
 # take original source file, yield each line without line breaks
-# ignore empty and commented lines
+# yield eof with its position
 def break_line_pass(source):
     for row, line in enumerate(source.splitlines(keepends=True)):
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            yield Token(kind="line", value=line.rstrip(), position=(row, 0))
+        yield Token(kind="line", value=line, position=(row, 0))
     # todo: other kinds of break
     eof_position = (row, len(line)) if source[-1] != "\n" else (row + 1, 0)
     yield Token(kind="eof", position=eof_position)
+
+
+# skip comment and empty lines, remove trailing spaces
+def comment_pass(token_gen):
+    for token in token_gen:
+        if token.kind != "line":
+            yield token
+            continue
+        stripped = token.value.strip()
+        if stripped and not stripped.startswith(";"):
+            yield replace(token, value=token.value.rstrip())
 
 
 # convert indent in the front of line into level token
@@ -66,7 +75,7 @@ class Tests:
     @staticmethod
     def internal_match_break_line_pass_result(t, source, trailing=False, extra=""):
         second_row = 1 if not extra else 2
-        tokens = list(break_line_pass(source))
+        tokens = list(comment_pass(break_line_pass(source)))
         eof_position = (second_row + 1, 0) if trailing else (second_row, 6)
         t.assertEqual(
             tokens,
@@ -94,7 +103,7 @@ class Tests:
 
     @staticmethod
     def test_break_line_comment(t):
-        comment = "# here comes the name\n"
+        comment = "; here comes the name\n"
         source = f"hello\n{comment}cowsay"
         Tests.internal_match_break_line_pass_result(t, source, extra=comment)
 
@@ -122,7 +131,7 @@ class Tests:
         from pathlib import Path
 
         source = (Path(__file__).parent / ".." / ".." / "misc" / "fib.koi").read_text()
-        tokens = list(indent_level_pass(break_line_pass(source)))
+        tokens = list(indent_level_pass(comment_pass(break_line_pass(source))))
         t.assertEqual(
             [token.kind for token in tokens],
             [

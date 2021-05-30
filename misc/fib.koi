@@ -1,4 +1,4 @@
-# fib.koi - iteratively calculate fibonacci numbers
+; fib.koi - iteratively calculate fibonacci numbers
 
 fib = n ->
     fib_iter = m, a, b ->
