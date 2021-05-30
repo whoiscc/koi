@@ -26,6 +26,7 @@ def lexical_parse(source):
         string_literal_pass,
         comment_pass,
         indent_level_pass,
+        split_word_pass,
     ):
         token_stream = do_pass(token_stream)
     yield from token_stream
@@ -42,6 +43,7 @@ def break_line_pass(source):
 
 
 # extract string literal from source
+# after this no token can cross line boundary any more
 def string_literal_pass(token_gen):
     accumulated, string_position, close_quote = None, None, None
     for token in token_gen:
@@ -130,6 +132,60 @@ def indent_level_pass(token_gen):
                 yield Token(kind="close_level", position=level_position)
                 levels.pop()
         yield Token(kind="line", value=rest, position=level_position)
+
+
+def split_word_pass(token_gen):
+    for token in token_gen:
+        if token.kind != "line":
+            yield token
+            continue
+
+        line = token.value.strip()
+        row, col_offset = token.position
+
+        token_table1 = ("return", "if")
+        token_table2 = {"==": "equal", "->": "arrow"}
+        token_table3 = {"=": "assign", "+": "plus", ",": "comma"}
+
+        while line:
+            token_length = -1
+            if token_length < 0:
+                for word in token_table1:
+                    if line.startswith(word):
+                        yield Token(kind=word, position=(row, col_offset))
+                        token_length = len(word)
+                        break
+            if token_length < 0:
+                for op in token_table2:
+                    if line.startswith(op):
+                        yield Token(kind=token_table2[op], position=(row, col_offset))
+                        token_length = len(op)
+                        break
+            if token_length < 0:
+                if line[0] in token_table3:
+                    yield Token(kind=token_table3[line[0]], position=(row, col_offset))
+                    token_length = 1
+            if token_length < 0:
+                if match := re.match(r"[a-zA-Z_]\w*", line):
+                    name = match[0]
+                    yield Token(kind="name", value=name, position=(row, col_offset))
+                    token_length = len(name)
+            # TODO: float number
+            if token_length < 0:
+                # https://stackoverflow.com/a/11733325
+                if match := re.match(
+                    r"[1-9]\d*|0|0[oO][0-7]+|0[xX][\da-fA-F]+|0[bB][01]+", line
+                ):
+                    int_number = int(match[0], base=0)
+                    yield Token(
+                        kind="int", value=int_number, position=(row, col_offset)
+                    )
+                    token_length = len(match[0])
+            if token_length < 0:
+                raise LexError(position=(row, col_offset))
+
+            col_offset += token_length
+            line = line[token_length:].lstrip()
 
 
 if __name__ == "__main__":
