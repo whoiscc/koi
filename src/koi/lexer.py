@@ -1,6 +1,7 @@
 # koi/lexer.py - Lexical parser for Koi language
 from dataclasses import dataclass, replace
 from typing import Any, Tuple
+import re
 
 
 @dataclass(frozen=True)
@@ -69,14 +70,11 @@ def string_literal_pass(token_gen):
                 string_position = row, col_offset
                 close_quote = '"'  # TODO
             else:
-                offset = 0
-                while True:
-                    offset = line.find(close_quote, offset)
-                    if offset <= 0 or line[offset - 1] != "\\":
-                        break
-                if offset < 0:
+                match = re.search(rf"[^\\]?({close_quote})", line)
+                if not match:
                     accumulated += line
                     break
+                offset = match.start(1)
                 string_tail, line = (
                     line[:offset],
                     line[offset + len(close_quote) :],
