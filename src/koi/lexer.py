@@ -17,25 +17,86 @@ class LexError(Exception):
         self.position = position
 
 
-# take original source file, yield each line without line breaks
+def lexical_parse(source):
+    token_stream = source
+    for do_pass in (
+        # TODO
+        break_line_pass,
+        string_literal_pass,
+        comment_pass,
+        indent_level_pass,
+    ):
+        token_stream = do_pass(token_stream)
+    yield from token_stream
+
+
+# take original source file, yield each line with line breaks
 # yield eof with its position
 def break_line_pass(source):
     for row, line in enumerate(source.splitlines(keepends=True)):
         yield Token(kind="line", value=line, position=(row, 0))
-    # todo: other kinds of break
+    # TODO: other kinds of break
     eof_position = (row, len(line)) if source[-1] != "\n" else (row + 1, 0)
     yield Token(kind="eof", position=eof_position)
 
 
-# skip comment and empty lines, remove trailing spaces
+# extract string literal from source
+def string_literal_pass(token_gen):
+    accumulated, string_position, close_quote = None, None, None
+    for token in token_gen:
+        if token.kind == "eof":
+            if accumulated:
+                raise LexError(token.position)
+            yield token
+            return
+        assert token.kind == "line"
+
+        line = token.value
+        row, col_offset = token.position
+        while line:
+            if accumulated is None:
+                offset = line.find('"')
+                if offset < 0:
+                    yield Token(kind="line", value=line, position=(row, col_offset))
+                    break
+                pre_string, line = line[:offset], line[offset + 1 :]
+                if pre_string:
+                    yield Token(
+                        kind="line", value=pre_string, position=(row, col_offset)
+                    )
+                col_offset += offset + 1  # for open quote
+                accumulated = ""
+                string_position = row, col_offset
+                close_quote = '"'  # TODO
+            else:
+                offset = 0
+                while True:
+                    offset = line.find(close_quote, offset)
+                    if offset <= 0 or line[offset - 1] != "\\":
+                        break
+                if offset < 0:
+                    accumulated += line
+                    break
+                string_tail, line = (
+                    line[:offset],
+                    line[offset + len(close_quote) :],
+                )
+                if string_tail:
+                    accumulated += string_tail
+                col_offset += offset + len(close_quote)
+                yield Token(kind="string", value=accumulated, position=string_position)
+                accumulated = string_position = close_quote = None
+
+
+# skip comment and empty lines, remove trailing spaces and line break
 def comment_pass(token_gen):
     for token in token_gen:
         if token.kind != "line":
             yield token
             continue
-        stripped = token.value.strip()
-        if stripped and not stripped.startswith(";"):
-            yield replace(token, value=token.value.rstrip())
+        pure_line = token.value.split(";")[0].rstrip()
+        if pure_line.strip():
+            yield replace(token, value=pure_line)
 
 
 # convert indent in the front of line into level token
@@ -49,7 +110,9 @@ def indent_level_pass(token_gen):
                     yield Token(kind="close_level", position=token.position)
             yield token
             return
-        assert token.kind == "line"
+        if token.kind != "line":
+            yield token
+            continue
 
         rest = token.value.lstrip()
         token_level = len(token.value) - len(rest)
@@ -71,11 +134,25 @@ def indent_level_pass(token_gen):
         yield Token(kind="line", value=rest, position=level_position)
 
 
+if __name__ == "__main__":
+    from sys import argv
+
+    with open(argv[1]) as source_file:
+        token_stream = lexical_parse(source_file.read())
+    for token in token_stream:
+        print(token)
+
+
 class Tests:
     @staticmethod
-    def internal_match_break_line_pass_result(t, source, trailing=False, extra=""):
+    def internal_match_break_line_pass_result(
+        t, source, trailing=False, extra="", string_pass=False
+    ):
         second_row = 1 if not extra else 2
-        tokens = list(comment_pass(break_line_pass(source)))
+        if not string_pass:
+            tokens = list(comment_pass(break_line_pass(source)))
+        else:
+            tokens = list(comment_pass(string_literal_pass(break_line_pass(source))))
         eof_position = (second_row + 1, 0) if trailing else (second_row, 6)
         t.assertEqual(
             tokens,
@@ -165,3 +242,64 @@ class Tests:
             Token(kind="eof", position=(3, 0)),
         ]
         t.assertRaises(LexError, lambda: list(indent_level_pass(lines)))
+
+    @staticmethod
+    def test_trailing_comment(t):
+        source = "hello  ; to who?\ncowsay"
+        Tests.internal_match_break_line_pass_result(t, source)
+
+    @staticmethod
+    def test_string_pass_without_string(t):
+        source = "hello\ncowsay"
+        Tests.internal_match_break_line_pass_result(t, source, string_pass=True)
+
+    @staticmethod
+    def test_single_line_string(t):
+        lines = break_line_pass('say "Hello!"\n')
+        tokens = list(string_literal_pass(lines))
+        t.assertEqual(
+            tokens,
+            [
+                Token(kind="line", value="say ", position=(0, 0)),
+                Token(kind="string", value="Hello!", position=(0, 5)),
+                Token(kind="line", value="\n", position=(0, 12)),
+                Token(kind="eof", position=(1, 0)),
+            ],
+        )
+
+    @staticmethod
+    def test_single_line_multiple_string(t):
+        lines = break_line_pass('say "Hello!", to: "cowsay"\n')
+        tokens = list(string_literal_pass(lines))
+        t.assertEqual(
+            tokens,
+            [
+                Token(kind="line", value="say ", position=(0, 0)),
+                Token(kind="string", value="Hello!", position=(0, 5)),
+                Token(kind="line", value=", to: ", position=(0, 12)),
+                Token(kind="string", value="cowsay", position=(0, 19)),
+                Token(kind="line", value="\n", position=(0, 26)),
+                Token(kind="eof", position=(1, 0)),
+            ],
+        )
+
+    @staticmethod
+    def test_multiline_string(t):
+        lines = break_line_pass('say "\nDear cowsay:\n  Hello!\n"\n')
+        tokens = list(string_literal_pass(lines))
+        t.assertEqual(
+            tokens,
+            [
+                Token(kind="line", value="say ", position=(0, 0)),
+                Token(
+                    kind="string", value="\nDear cowsay:\n  Hello!\n", position=(0, 5)
+                ),
+                Token(kind="line", value="\n", position=(3, 1)),
+                Token(kind="eof", position=(4, 0)),
+            ],
+        )
+
+    @staticmethod
+    def test_throw_on_unclosed_string(t):
+        lines = break_line_pass('say "Hello!\n')
+        t.assertRaises(LexError, lambda: list(string_literal_pass(lines)))
