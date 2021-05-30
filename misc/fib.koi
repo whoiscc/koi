@@ -1,0 +1,7 @@
+# fib.koi - iteratively calculate fibonacci numbers
+
+fib = n ->
+    fib_iter = m, a, b ->
+        return b if m == n
+        fib_iter m + 1, b, a + b
+    fib_iter 1, 0, 1
