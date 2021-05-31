@@ -367,6 +367,20 @@ class Tests:  # pragma: no cover
         t.assertEqual(len(list(lexical_parse(Tests.get_source("fib")))), 39)
 
     @staticmethod
+    def test_empty_string(t):
+        lines = break_line_pass('nothing = ""\n')
+        tokens = list(string_literal_pass(lines))
+        t.assertEqual(
+            tokens,
+            [
+                Token(kind="line", value="nothing = ", position=(0, 0)),
+                Token(kind="string", value="", position=(0, 11)),
+                Token(kind="line", value="\n", position=(0, 12)),
+                Token(kind="eof", position=(1, 0)),
+            ],
+        )
+
+    @staticmethod
     def test_doctest(_):
         import doctest
 
