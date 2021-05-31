@@ -379,9 +379,3 @@ class Tests:  # pragma: no cover
                 Token(kind="eof", position=(1, 0)),
             ],
         )
-
-    @staticmethod
-    def test_doctest(_):
-        import doctest
-
-        doctest.testmod()
