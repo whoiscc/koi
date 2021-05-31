@@ -1,6 +1,9 @@
 # koi/__init__.py - koi package
 
 
-class Tests:
-    def test_dummy(t):
-        pass
+class Tests:  # pragma: no cover
+    @staticmethod
+    def test_doctest(_):
+        import doctest
+
+        doctest.testmod()

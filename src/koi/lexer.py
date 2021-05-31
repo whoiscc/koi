@@ -19,10 +19,8 @@ class LexError(Exception):
 
 
 def lexical_parse(source):
-    token_stream = source
+    token_stream = break_line_pass(source)
     for do_pass in (
-        # TODO
-        break_line_pass,
         string_literal_pass,
         comment_pass,
         indent_level_pass,
@@ -188,7 +186,7 @@ def split_word_pass(token_gen):
             line = line[token_length:].lstrip()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     from sys import argv
 
     with open(argv[1]) as source_file:
@@ -197,7 +195,7 @@ if __name__ == "__main__":
         print(token)
 
 
-class Tests:
+class Tests:  # pragma: no cover
     @staticmethod
     def internal_match_break_line_pass_result(
         t, source, trailing=False, extra="", string_pass=False
@@ -258,10 +256,16 @@ class Tests:
         )
 
     @staticmethod
-    def test_fib_level(t):
+    def get_source(name):
         from pathlib import Path
 
-        source = (Path(__file__).parent / ".." / ".." / "misc" / "fib.koi").read_text()
+        return (
+            Path(__file__).parent / ".." / ".." / "misc" / f"{name}.koi"
+        ).read_text()
+
+    @staticmethod
+    def test_fib_level(t):
+        source = Tests.get_source("fib")
         tokens = list(indent_level_pass(comment_pass(break_line_pass(source))))
         t.assertEqual(
             [token.kind for token in tokens],
@@ -357,3 +361,13 @@ class Tests:
     def test_throw_on_unclosed_string(t):
         lines = break_line_pass('say "Hello!\n')
         t.assertRaises(LexError, lambda: list(string_literal_pass(lines)))
+
+    @staticmethod
+    def test_fib_split(t):
+        t.assertEqual(len(list(lexical_parse(Tests.get_source("fib")))), 39)
+
+    @staticmethod
+    def test_doctest(_):
+        import doctest
+
+        doctest.testmod()

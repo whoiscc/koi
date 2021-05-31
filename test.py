@@ -6,7 +6,7 @@ from koi.lexer import Tests as LexerTests
 
 
 koi_tests = unittest.TestSuite()
-for name, Tests in [("lexer", LexerTests), ("koi", KoiTests)]:
+for Tests in [LexerTests, KoiTests]:
 
     class TestCase(unittest.TestCase):
         pass
